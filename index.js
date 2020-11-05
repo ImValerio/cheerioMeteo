@@ -1,23 +1,15 @@
 const cheerio = require('cheerio');
-const request = require('request');
+const axios = require('axios');
+const fs = require("fs");
 const colors = require('colors');
 
-let location = "Bologna"
+getTodayPage("Bologna");
+async function getMainPage(location) {
 
-request({
-    method: 'GET',
-    url: `https://www.meteo.it/meteo/${location}-37006`,
-    /*** PARTE HEADER AGGIUNTA DA POCO ***/
-    headers: {
-        "Host": "www.meteo.it",
-        "Pragma": "no-cache",
-        "Cache-Control": "no-cache",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    }
-}, (err, res, body) => {
-
-    if (err) return console.error(err);
+    const body = await axios({
+        method: 'GET',
+        url: `https://www.meteo.it/meteo/${location}-37006`,
+    }).then(res => res.data);
 
     let $ = cheerio.load(body);
 
@@ -33,16 +25,76 @@ request({
 
     let iconTomorrow = toIcon($("a[href='/meteo/bologna-domani-37006'] > div >img").attr().alt)
 
-    let now = $('.near_icon').first().text();
-    now = ((now > 0 ? `+`.brightWhite + `${now}°`.brightYellow : `-${now}°`.brightYellow) + "C".brightWhite);
+    /* let now = $('.near_icon').first().text();
+     now = ((now > 0 ? `+`.brightWhite + `${now}°`.brightYellow : `-${now}°`.brightYellow) + "C".brightWhite);
+ 
+     let icon = toIcon($('p > span > img').attr().alt);
+     const lastUpdate = $(".airportTime > img").attr().alt.split(",")[1];
+ 
+     location = (lastUpdate + ") " + location.underline + ":").brightWhite;*/
+    //console.log((` ${location} ${icon}  ${now}  ➡️   ` + `${iconTomorrow}  [`.brightWhite + `${tomorrow[0]}` + `,`.brightWhite + `${tomorrow[1]}` + `]`.brightWhite).bold);
+    return (`➡️   ` + `${iconTomorrow}  [`.brightWhite + `${tomorrow[0]}` + `,`.brightWhite + `${tomorrow[1]}` + `]`.brightWhite).bold;
+}
 
-    let icon = toIcon($('p > span > img').attr().alt);
-    const lastUpdate = $(".airportTime > img").attr().alt.split(",")[1];
 
-    location = (lastUpdate + ") " + location.underline + ":").brightWhite;
-    console.log((` ${location} ${icon}  ${now}  ➡️   ` + `${iconTomorrow}  [`.brightWhite + `${tomorrow[0]}` + `,`.brightWhite + `${tomorrow[1]}` + `]`.brightWhite).bold);
-});
+async function getTodayPage(location) {
+    let stats = fs.statSync("tempo.txt");
+    let seconds = (new Date().getTime() - stats.ctime) / 1000;
 
+    if (seconds > 900) {
+
+        const body = await axios({
+            method: 'GET',
+            url: `https://www.meteo.it/meteo/${location}-oggi-37006`,
+        }).then(res => res.data);
+
+        let $ = cheerio.load(body);
+
+        //icona tempo document.querySelectorAll("figure > img").alt
+        const icons = $("figure > img").map((i, e) => {
+            return toIcon($(e).attr("alt"));
+        }).get();
+        //Temperatura document.querySelectorAll(".replacedH5Temperature").innerText
+        const temps = $(".replacedH5Temperature").map((i, e) => {
+            e = $(e).text();
+            if (Number(e.substring(0, e.length - 1)) > 0) {
+                return e = ` +${e}C`;
+            }
+            if (Number(e.substring(0, e.length - 1)) < 0) {
+                return e += ` -${e}C`;
+            }
+            return ` ${e}C`;
+        }).get();
+
+        const hours = $(".hour > time").map((i, e) => {
+            return $(e).text();
+        }).get();
+
+        let displayData = "";
+        for (let i = 0; i < 3; i++) {
+            if (hours[i])
+                displayData += `      [${hours[i]}]`.brightWhite.bold + ` ${icons[i]} ${temps[i]}\n`
+
+        }
+
+        const tomorrow = await getMainPage(location);
+        const intro = `☀️  ` + ` Meteo ${location} `.bold.underline.brightWhite + ` 🌧`.bold.brightWhite + "\n\n"
+
+        displayData = intro + `${displayData} \n   ` + `Domani`.bold.brightWhite + ` ${tomorrow}`;
+
+        fs.writeFile('tempo.txt', displayData, function (err) {
+            if (err) return console.log(err);
+        });
+        console.log(displayData);
+    } else {
+        fs.readFile('tempo.txt', 'utf8', function (err, data) {
+            if (err) {
+                return console.log(err);
+            }
+            console.log(data);
+        });
+    }
+}
 
 function toIcon(img) {
     switch (img.toLowerCase()) {
@@ -73,7 +125,9 @@ function toIcon(img) {
         case "allarme pioggia":
             img = "⚠️ ☔️";
             break;
-
+        case "pioggia debole":
+            img = "🌧 📉";
+            break;
         default:
         // code block
     }
