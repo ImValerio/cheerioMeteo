@@ -1,3 +1,3 @@
 # cheerioMeteo
 
-Scrape Meteo.it BOLOGNA
+Scraping italian weather from meteo.it
